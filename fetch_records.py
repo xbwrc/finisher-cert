@@ -145,6 +145,18 @@ def load_all_from_db() -> list[dict]:
         conn.close()
 
 
+def get_start_time():
+    """从 start_time 表读取唯一的开始时间，若表为空则返回 None。"""
+    conn = get_conn(cursorclass=pymysql.cursors.DictCursor)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT start_time FROM start_time LIMIT 1")
+            row = cur.fetchone()
+            return row["start_time"] if row else None
+    finally:
+        conn.close()
+
+
 def update_circles(records: list[dict]) -> int:
     """批量更新 m_record 表中各记录的 circle 字段，返回更新条数。
     records 中每条需包含 id 和 circle。

@@ -82,11 +82,20 @@ def run_once(iteration: int):
         print(f"  [错误] 读取数据库失败: {e}")
         return
 
-    # 3. 内存计算圈数
+    # 3. 读取开始时间，过滤早于开始时间的记录
+    start_time = fetch_records.get_start_time()
+    if start_time:
+        before = len(all_records)
+        all_records = [r for r in all_records if r["curr_time"] and r["curr_time"] >= start_time]
+        print(f"  开始时间: {start_time}，过滤掉 {before - len(all_records)} 条早于开始时间的记录，剩余 {len(all_records)} 条")
+    else:
+        print("  未设置开始时间，使用全量数据计算圈数")
+
+    # 4. 内存计算圈数
     changed = calc_circles(list(all_records))
     print(f"  圈数计算完毕，{len(changed)} 条记录需要更新")
 
-    # 4. 回写圈数
+    # 5. 回写圈数
     if changed:
         try:
             n_updated = fetch_records.update_circles(changed)

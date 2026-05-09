@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-从计时系统拉取成绩记录（xlsx格式），解析成 dict 列表并返回。
+从计时系统拉取成绩记录（xlsx格式），解析成 dict 列表并存入 MySQL。
 """
 
 import io
@@ -8,6 +8,9 @@ import sys
 import urllib.request
 
 import openpyxl
+import pymysql
+
+import config
 
 URL = (
     "https://cloud-time.marathon8.com/gubin_admin/records"
@@ -58,6 +61,44 @@ def fetch_records() -> list[dict]:
     return records
 
 
+def get_conn(**kwargs):
+    """创建并返回数据库连接。"""
+    return pymysql.connect(
+        host=config.DB_HOST,
+        port=config.DB_PORT,
+        user=config.DB_USER,
+        password=config.DB_PASSWORD,
+        database=config.DB_NAME,
+        charset="utf8mb4",
+        **kwargs,
+    )
+
+
+def save_to_db(records: list[dict]) -> int:
+    """将记录写入 MySQL m_record 表，跳过重复记录，返回实际插入条数。"""
+    if not records:
+        return 0
+
+    conn = get_conn()
+    sql = """
+        INSERT IGNORE INTO m_record (chip, curr_time, circle)
+        VALUES (%s, %s, %s)
+    """
+    inserted = 0
+    try:
+        with conn.cursor() as cur:
+            for r in records:
+                chip = r.get("芯片码") or ""
+                curr_time = r.get("自然时间") or None
+                cur.execute(sql, (chip, curr_time, 0))
+                inserted += cur.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+
+    return inserted
+
+
 def main():
     print("正在拉取成绩数据...")
     try:
@@ -81,6 +122,49 @@ def main():
 
     if len(records) > 5:
         print(f"... 共 {len(records)} 条，以上显示前5条")
+
+    print("\n正在写入数据库...")
+    try:
+        n = save_to_db(records)
+        print(f"已写入数据库 {n} 条（重复跳过 {len(records) - n} 条）")
+    except Exception as e:
+        print(f"数据库写入失败: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def load_all_from_db() -> list[dict]:
+    """从数据库读取全量 m_record 记录，返回 dict 列表。
+    每条记录包含: id, chip, curr_time, circle
+    """
+    conn = get_conn(cursorclass=pymysql.cursors.DictCursor)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, chip, curr_time, circle FROM m_record")
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def update_circles(records: list[dict]) -> int:
+    """批量更新 m_record 表中各记录的 circle 字段，返回更新条数。
+    records 中每条需包含 id 和 circle。
+    """
+    if not records:
+        return 0
+
+    conn = get_conn()
+    sql = "UPDATE m_record SET circle = %s WHERE id = %s"
+    updated = 0
+    try:
+        with conn.cursor() as cur:
+            for r in records:
+                cur.execute(sql, (r["circle"], r["id"]))
+                updated += cur.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+
+    return updated
 
 
 if __name__ == "__main__":

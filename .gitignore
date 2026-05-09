@@ -219,3 +219,5 @@ __marimo__/
 
 # 数据库配置（含敏感信息，不提交）
 config.py
+.DS_Store
+output/
